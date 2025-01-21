@@ -13,7 +13,7 @@ import collections
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torch_geometric.datasets import Planetoid
+from torch_geometric.datasets import Planetoid, WikiCS 
 from torch_geometric.utils import add_self_loops, degree
 from sklearn.metrics import accuracy_score
 import random
@@ -39,6 +39,12 @@ from torch_geometric.datasets import Amazon
 import warnings
 warnings.simplefilter(action='ignore', category=Warning)
 import itertools
+
+parser = argparse.ArgumentParser()
+parser.add_argument('--dataset', type=str, default='Cora', choices=['Cora', 'Citeseer', 'Pubmed', 'WikiCS'])
+parser.add_argument('--wikics_split', type=int, default=0, help='Which split for WikiCS (0-19).')
+args = parser.parse_args()
+
 
 class SGCNet(nn.Module):
     """
@@ -132,7 +138,12 @@ group_trunc_ratio_hop_1 = 0.5
 group_trunc_ratio_hop_2 = 0.7
 ratio = 3
 directory = 'value/'
-pattern = re.compile(r'^Cora_(\d+)_10_0_0\.5_0\.7_pc_value\.pkl$')
+#pattern = re.compile(r'^Cora_(\d+)_10_0_0\.5_0\.7_pc_value\.pkl$')
+if args.dataset == 'WikiCS':
+    pattern = re.compile(f'^WikiCS_(\d+)_3_0_0\.5_0\.7_pc_value\.pkl$')
+else:
+    pattern = re.compile(f'^{args.dataset}_(\d+)_10_0_0\.5_0\.7_pc_value\.pkl$')
+
 
 # Find matching files for PC-Winter results
 matching_files = []
@@ -179,10 +190,22 @@ unlabeled_win = torch.tensor(unlabled_win_df['key'].values)
 unlabeled_win_value = unlabled_win_df['value'].values
 
 # Load and preprocess the Cora dataset
-dataset = Planetoid(root='dataset/', name='Cora', transform=T.NormalizeFeatures())
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-data = dataset[0].to(device)
+#dataset = Planetoid(root='dataset/', name='Cora', transform=T.NormalizeFeatures())
+# Load and preprocess dataset
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+if args.dataset == 'WikiCS':
+    dataset = WikiCS(root='dataset/WikiCS', transform=T.NormalizeFeatures())
+    data = dataset[0].to(device)
+    # 选择split
+    split_id = args.wikics_split
+    data.train_mask = data.train_mask[:, split_id].clone()
+    data.val_mask = data.val_mask[:, split_id].clone()
+else:
+    dataset = Planetoid(root='dataset/', name=args.dataset, transform=T.NormalizeFeatures())
+    data = dataset[0].to(device)
+    
 train_mask = data.train_mask
 val_mask = data.val_mask 
 test_mask = data.test_mask 
@@ -253,8 +276,13 @@ for j in range(1,drop_num):
 # Save results
 path = 'res/'
 os.makedirs(path, exist_ok=True)
-with open(os.path.join(path, f'node_drop_large_winter_value_{group_trunc_ratio_hop_1}_{group_trunc_ratio_hop_2}_{counter}_cora_test.pkl'), 'wb') as file:
+#with open(os.path.join(path, f'node_drop_large_winter_value_{group_trunc_ratio_hop_1}_{group_trunc_ratio_hop_2}_{counter}_cora_test.pkl'), 'wb') as file:
+#    pickle.dump(win_acc, file)
+
+#with open(os.path.join(path, f'node_drop_large_winter_value_{group_trunc_ratio_hop_1}_{group_trunc_ratio_hop_2}_{counter}_cora_vali.pkl'), 'wb') as file:
+#    pickle.dump(val_acc_list, file)
+with open(os.path.join(path, f'node_drop_large_winter_value_{group_trunc_ratio_hop_1}_{group_trunc_ratio_hop_2}_{counter}_{args.dataset.lower()}_test.pkl'), 'wb') as file:
     pickle.dump(win_acc, file)
 
-with open(os.path.join(path, f'node_drop_large_winter_value_{group_trunc_ratio_hop_1}_{group_trunc_ratio_hop_2}_{counter}_cora_vali.pkl'), 'wb') as file:
+with open(os.path.join(path, f'node_drop_large_winter_value_{group_trunc_ratio_hop_1}_{group_trunc_ratio_hop_2}_{counter}_{args.dataset.lower()}_vali.pkl'), 'wb') as file:
     pickle.dump(val_acc_list, file)
