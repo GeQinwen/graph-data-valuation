@@ -142,7 +142,7 @@ directory = 'value/'
 if args.dataset == 'WikiCS':
     pattern = re.compile(f'^WikiCS_(\d+)_3_0_0\.5_0\.7_pc_value\.pkl$')
 else:
-    pattern = re.compile(f'^{args.dataset}_(\d+)_10_0_0\.5_0\.7_pc_value\.pkl$')
+    pattern = re.compile(f'^{args.dataset}_(\d+)_325_0_0\.5_0\.7_pc_value\.pkl$')
 
 
 # Find matching files for PC-Winter results

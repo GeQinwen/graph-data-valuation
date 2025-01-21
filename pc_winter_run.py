@@ -76,9 +76,9 @@ dataset_params = {
         'weight_decay': 5e-4
     },
     'WikiCS': {
-        'num_epochs': 200,
-        'lr': 0.01,
-        'weight_decay': 5e-4
+        'num_epochs': 5000,
+        'lr': 0.1,
+        'weight_decay': 0
     }
 }
 
@@ -148,9 +148,12 @@ class MLP(nn.Module):
         output = self.forward(x)
         return output
 
-    def fit(self, X, y, val_X, val_y, num_iter=200, lr=0.01, weight_decay=5e-4):
+    def fit(self, X, y, val_X, val_y, num_iter=200, lr=0.01, weight_decay=5e-4, patience=100):
         optimizer = torch.optim.Adam(self.parameters(), lr=lr, weight_decay=weight_decay)
-        counter = 0
+        
+        best_val_acc = 0.0
+        best_state = None
+        epochs_no_improve = 0
 
         for epoch in range(num_iter):
             self.train()
@@ -159,11 +162,28 @@ class MLP(nn.Module):
             loss = F.nll_loss(output, y)
             loss.backward()
             optimizer.step()
-            
-            # ====== 调试打印 loss ======
-            # 你可以每隔10轮打印一次，也可以每轮都打印
-            #if epoch % 40 == 0:
-            #    print(f"      [MLP.fit] Epoch {epoch}/{num_iter}, loss={loss.item():.4f}")
+
+            self.eval()
+            with torch.no_grad():
+                val_pred = self(val_X).argmax(dim=1)
+                val_acc = (val_pred == val_y).float().mean().item()
+
+            if val_acc > best_val_acc:
+                best_val_acc = val_acc
+                best_state = self.state_dict() 
+                epochs_no_improve = 0
+            else:
+                epochs_no_improve += 1
+
+            if epochs_no_improve >= patience:
+                print(f"Early stopping at epoch {epoch}, best_val_acc={best_val_acc:.4f}")
+                break
+
+        if best_state is not None:
+            self.load_state_dict(best_state)
+
+        return best_val_acc
+
 
             
 def adjacency_to_edge_list(adj_matrix):
@@ -398,17 +418,16 @@ if __name__ == "__main__":
     elif dataset_name == 'WikiCS':
         dataset = WikiCS(root='dataset/WikiCS', transform=T.NormalizeFeatures())
         data = dataset[0].to(device)
-        # 如果想查看数据结构，可插入检查代码：
         # print("WikiCS data.x shape:", data.x.shape)
         # print("WikiCS data.y shape:", data.y.shape)
         # print("WikiCS data.train_mask shape:", data.train_mask.shape)
         # print("WikiCS data.val_mask shape:", data.val_mask.shape)
         # print("WikiCS data.test_mask shape:", data.test_mask.shape)
         
-        # 选择其中一个 split，比如第 0 个
         split_id = args.wikics_split
         data.train_mask = data.train_mask[:, split_id].clone()
         data.val_mask = data.val_mask[:, split_id].clone()
+        data.test_mask = data.test_mask.clone()
         print("Check shapes:")
         print("  data.x.shape:", data.x.shape)  # e.g. [11701, 300]
         print("  data.y.shape:", data.y.shape)  # e.g. [11701]
@@ -418,9 +437,7 @@ if __name__ == "__main__":
         print("  val_mask sum:  ", data.val_mask.sum().item())
         print("  test_mask sum: ", data.test_mask.sum().item())
 
-        # 统计每个类别在train/val/test中的分布
         print("Check label distribution in train/val/test:")
-        # 如果训练集为 0，这里就会看到 bincount 出来全是0
         print("  train labels:", torch.bincount(data.y[data.train_mask]).tolist())
         print("  val labels:  ", torch.bincount(data.y[data.val_mask]).tolist())
         print("  test labels: ", torch.bincount(data.y[data.test_mask]).tolist())
@@ -533,12 +550,10 @@ if __name__ == "__main__":
                     ind_train_features, ind_train_labels = generate_features_and_labels_ind(cur_hop_1_list, cur_hop_2_list, cur_labeled_node_list,
                                                 labeled_node, labeled_to_player_map, inductive_edge_index, data, device)
                     
-                    # ====== 调试打印 ======
-                    print(f"  --> shape of ind_train_features: {ind_train_features.shape}")
-                    print(f"  --> shape of ind_train_labels:   {ind_train_labels.shape}")
-                    print(f"  --> unique labels in train: {torch.unique(ind_train_labels).tolist()}")
-                    # 或者统计每个label出现次数
-                    print(f"  --> label distribution: {torch.bincount(ind_train_labels).tolist()}")
+                    #print(f"  --> shape of ind_train_features: {ind_train_features.shape}")
+                    #print(f"  --> shape of ind_train_labels:   {ind_train_labels.shape}")
+                    #print(f"  --> unique labels in train: {torch.unique(ind_train_labels).tolist()}")
+                    #print(f"  --> label distribution: {torch.bincount(ind_train_labels).tolist()}")
 
                     val_acc = evaluate_retrain_model(MLP, dataset.num_features, dataset.num_classes, 
                                                      ind_train_features, ind_train_labels, val_features, val_labels, 
@@ -575,3 +590,4 @@ if __name__ == "__main__":
         pickle.dump( sample_counter_dict, f)
     with open(f"value/{dataset_name}_{seed}_{num_perm}_{label_trunc_ratio}_{group_trunc_ratio_hop_1}_{group_trunc_ratio_hop_2}_perf.pkl", "wb") as f:
         pickle.dump(perf_dict, f)
+        
